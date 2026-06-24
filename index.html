@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wissenschaftstage – Körpermessung</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3348;
+    --accent: #6c8cff;
+    --accent2: #ff7c5c;
+    --accent3: #4dd9ac;
+    --text: #e8eaf0;
+    --muted: #7b82a0;
+    --pill-bg: #252940;
+    --pill-active: #6c8cff;
+    --pill-text-active: #fff;
+    --radius: 12px;
+    --font: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    padding: 24px 20px 40px;
+  }
+
+  header { margin-bottom: 28px; }
+  header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #fff;
+  }
+  header p {
+    color: var(--muted);
+    font-size: 0.82rem;
+    margin-top: 4px;
+  }
+
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .control-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    min-width: 90px;
+  }
+
+  .pill-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    background: var(--pill-bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 5px 13px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .pill:hover { border-color: var(--accent); color: var(--text); }
+  .pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .pill.active.metric-2 { background: var(--accent2); border-color: var(--accent2); }
+  .pill.active.metric-3 { background: var(--accent3); border-color: var(--accent3); color: #0f1117; }
+  .pill.active.metric-4 { background: #c47fff; border-color: #c47fff; color: #fff; }
+
+  .chart-wrapper {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 20px 10px;
+    position: relative;
+    min-height: 360px;
+  }
+
+  svg text { font-family: var(--font); }
+
+  .tooltip {
+    position: fixed;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-size: 0.78rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+    z-index: 100;
+    max-width: 220px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip-title { font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .tooltip-row { color: var(--muted); }
+  .tooltip-row span { color: var(--text); font-weight: 600; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 14px;
+    padding: 0 4px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s;
+  }
+  .legend-item:hover { color: var(--text); }
+  .legend-item.faded { opacity: 0.35; }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Wissenschaftstage — Körpermessung</h1>
+  <p>7 Probanden · 7 Messzeitpunkte (Woche 1–6 + 3-Monats-Check-In)</p>
+</header>
+
+<div class="controls">
+  <div class="control-row">
+    <span class="control-label">Diagrammtyp</span>
+    <div class="pill-group" id="chartType">
+      <div class="pill active" data-val="line">Liniendiagramm</div>
+      <div class="pill" data-val="boxplot">Box-Whisker</div>
+      <div class="pill" data-val="boxmedian">Box-Whisker + Medianlinien</div>
+    </div>
+  </div>
+
+  <div class="control-row" id="lineOptions">
+    <span class="control-label">Linienstil</span>
+    <div class="pill-group" id="lineStyle">
+      <div class="pill active" data-val="smooth">Glatt (Kurve)</div>
+      <div class="pill" data-val="linear">Eckig (Linear)</div>
+    </div>
+  </div>
+
+  <div class="control-row" id="medianRow">
+    <span class="control-label">Überlagern</span>
+    <div class="pill-group" id="overlays">
+      <div class="pill" data-val="median">Median</div>
+    </div>
+  </div>
+
+  <div class="control-row">
+    <span class="control-label">Messgröße</span>
+    <div class="pill-group" id="metrics">
+      <div class="pill active metric-1" data-val="weight">Körpergewicht (kg)</div>
+      <div class="pill metric-2" data-val="biceps_r">R-Arm Bizeps (cm)</div>
+      <div class="pill metric-3" data-val="biceps_l">L-Arm Bizeps (cm)</div>
+      <div class="pill metric-4" data-val="weighted_combo">Gewichtete Kombination</div>
+      <div class="pill" data-val="combo">Alle drei überlagert</div>
+    </div>
+  </div>
+
+  <div class="control-row">
+    <span class="control-label">Werte</span>
+    <div class="pill-group" id="valueMode">
+      <div class="pill active" data-val="absolute">Absolut</div>
+      <div class="pill" data-val="percent">Prozentual (Δ zur Woche 1)</div>
+    </div>
+  </div>
+</div>
+
+<div class="chart-wrapper">
+  <svg id="chart"></svg>
+</div>
+
+<div class="legend" id="legend"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ── DATA ─────────────────────────────────────────────────────────────────────
+const rawData = [
+  { label: "Woche 1",  date: "2026-02-23", data: { "Proband 1": { biceps_r: 39.0, biceps_l: 37.0, weight: 90.0 }, "Proband 2": { biceps_r: 30.0, biceps_l: 29.0, weight: 65.0 }, "Proband 3": { biceps_r: 32.0, biceps_l: 31.5, weight: 70.0 }, "Proband 4": { biceps_r: 30.5, biceps_l: 30.5, weight: 57.2 }, "Proband 5": { biceps_r: 33.0, biceps_l: 32.5, weight: 71.0 }, "Proband 6": { biceps_r: 29.0, biceps_l: 29.0, weight: 72.0 }, "Proband 7": { biceps_r: 31.5, biceps_l: 31.5, weight: 72.8 } } },
+  { label: "Woche 2",  date: "2026-03-04", data: { "Proband 1": { biceps_r: 39.0, biceps_l: 37.0, weight: 91.3 }, "Proband 2": { biceps_r: 30.0, biceps_l: 29.0, weight: 64.4 }, "Proband 3": { biceps_r: 32.0, biceps_l: 31.5, weight: 71.2 }, "Proband 4": { biceps_r: 30.5, biceps_l: 30.5, weight: 57.7 }, "Proband 5": { biceps_r: 33.0, biceps_l: 32.5, weight: 70.8 }, "Proband 6": { biceps_r: 29.0, biceps_l: 29.5, weight: 71.4 }, "Proband 7": { biceps_r: 31.0, biceps_l: 31.5, weight: 72.9 } } },
+  { label: "Woche 3",  date: "2026-03-10", data: { "Proband 1": { biceps_r: 39.0, biceps_l: 37.0, weight: 90.2 }, "Proband 2": { biceps_r: 29.5, biceps_l: 29.5, weight: 64.2 }, "Proband 3": { biceps_r: 32.0, biceps_l: 31.5, weight: 71.5 }, "Proband 4": { biceps_r: 30.5, biceps_l: 30.5, weight: 58.3 }, "Proband 5": { biceps_r: 33.0, biceps_l: 32.5, weight: 70.3 }, "Proband 6": { biceps_r: 29.0, biceps_l: 29.0, weight: 70.9 }, "Proband 7": { biceps_r: 31.5, biceps_l: 31.5, weight: 73.7 } } },
+  { label: "Woche 4",  date: "2026-03-21", data: { "Proband 1": { biceps_r: 39.0, biceps_l: 37.5, weight: 90.1 }, "Proband 2": { biceps_r: 30.0, biceps_l: 29.0, weight: 63.2 }, "Proband 3": { biceps_r: 32.0, biceps_l: 31.5, weight: 72.7 }, "Proband 4": { biceps_r: 31.0, biceps_l: 30.5, weight: 58.0 }, "Proband 5": { biceps_r: 33.0, biceps_l: 32.5, weight: 71.2 }, "Proband 6": { biceps_r: 29.5, biceps_l: 29.5, weight: 70.9 }, "Proband 7": { biceps_r: 32.0, biceps_l: 31.5, weight: 72.5 } } },
+  { label: "Woche 5",  date: "2026-03-25", data: { "Proband 1": { biceps_r: 39.5, biceps_l: 37.0, weight: 90.8 }, "Proband 2": { biceps_r: 30.0, biceps_l: 29.0, weight: 62.2 }, "Proband 3": { biceps_r: 33.0, biceps_l: 31.5, weight: 72.3 }, "Proband 4": { biceps_r: 31.0, biceps_l: 30.5, weight: 58.6 }, "Proband 5": { biceps_r: 32.8, biceps_l: 32.5, weight: 70.9 }, "Proband 6": { biceps_r: 30.0, biceps_l: 30.5, weight: 70.4 }, "Proband 7": { biceps_r: 33.0, biceps_l: 32.0, weight: 73.4 } } },
+  { label: "Woche 6",  date: "2026-04-04", data: { "Proband 1": { biceps_r: 39.5, biceps_l: 37.5, weight: 91.2 }, "Proband 2": { biceps_r: 30.0, biceps_l: 29.5, weight: 62.8 }, "Proband 3": { biceps_r: 33.0, biceps_l: 32.0, weight: 71.8 }, "Proband 4": { biceps_r: 31.0, biceps_l: 30.5, weight: 56.9 }, "Proband 5": { biceps_r: 33.0, biceps_l: 32.5, weight: 69.8 }, "Proband 6": { biceps_r: 30.5, biceps_l: 30.5, weight: 70.7 }, "Proband 7": { biceps_r: 33.0, biceps_l: 32.5, weight: 73.8 } } },
+  { label: "3-Monate", date: "2026-06-16", data: { "Proband 1": { biceps_r: 39.0, biceps_l: 37.0, weight: 88.7 }, "Proband 2": { biceps_r: 30.5, biceps_l: 29.5, weight: 68.3 }, "Proband 3": { biceps_r: 31.0, biceps_l: 31.0, weight: 72.0 }, "Proband 4": { biceps_r: 28.5, biceps_l: 29.5, weight: 58.3 }, "Proband 5": { biceps_r: 33.5, biceps_l: 33.0, weight: 68.9 }, "Proband 6": { biceps_r: 31.0, biceps_l: 29.5, weight: 73.1 }, "Proband 7": { biceps_r: 30.5, biceps_l: 30.5, weight: 74.7 } } }
+];
+
+const participants = ["Proband 1","Proband 2","Proband 3","Proband 4","Proband 5","Proband 6","Proband 7"];
+const COLORS = ['#6c8cff','#ff7c5c','#4dd9ac','#f6c84b','#c47fff','#ff5fa0','#5cc8ff'];
+const METRIC_COLORS = { weight: '#6c8cff', biceps_r: '#ff7c5c', biceps_l: '#4dd9ac', weighted_combo: '#c47fff' };
+const METRIC_LABELS = { weight: 'Körpergewicht (kg)', biceps_r: 'R-Arm Bizeps (cm)', biceps_l: 'L-Arm Bizeps (cm)', weighted_combo: 'Gewichtete Kombination' };
+
+const LINE_ANIM_DURATION = 350;
+const BOX_ANIM_DURATION = 300; // Dauer für den neuen Boxplot Fly-In
+
+function getComboValue(weekData, p) {
+  return weekData[p].weight * weekData[p].biceps_r * weekData[p].biceps_l;
+}
+
+function getMetricValue(weekData, p, metric, mode) {
+  let val;
+  if (metric === 'weighted_combo') {
+    val = getComboValue(weekData, p);
+  } else {
+    val = weekData[p][metric];
+  }
+  if (mode === 'percent') {
+    let base = (metric === 'weighted_combo') ? getComboValue(rawData[0].data, p) : rawData[0].data[p][metric];
+    return ((val - base) / base) * 100;
+  }
+  return val;
+}
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+let state = {
+  chartType: 'line',
+  lineStyle: 'smooth',
+  showMedian: false,
+  metric: 'weight',
+  valueMode: 'absolute',
+  hiddenSeries: new Set()
+};
+
+// ── PILL CONTROLS ────────────────────────────────────────────────────────────
+function bindPills(groupId, stateKey) {
+  const group = document.getElementById(groupId);
+  group.querySelectorAll('.pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      if (stateKey === 'overlays') {
+        pill.classList.toggle('active');
+        state.showMedian = pill.classList.contains('active');
+      } else {
+        group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        state[stateKey] = pill.dataset.val;
+      }
+
+      if (stateKey === 'chartType') {
+        const isLine = state.chartType === 'line';
+        document.getElementById('lineOptions').style.display = isLine ? 'flex' : 'none';
+        document.getElementById('medianRow').style.display = isLine ? 'flex' : 'none';
+        if (!isLine) state.hiddenSeries.clear();
+      }
+      render();
+    });
+  });
+}
+
+bindPills('chartType', 'chartType');
+bindPills('lineStyle', 'lineStyle');
+bindPills('overlays', 'overlays');
+bindPills('metrics', 'metric');
+bindPills('valueMode', 'valueMode');
+
+// ── STATS HELPERS ────────────────────────────────────────────────────────────
+function computeBoxStats(vals) {
+  vals = vals.slice().sort(d3.ascending);
+  const q1 = d3.quantile(vals, 0.25);
+  const median = d3.quantile(vals, 0.5);
+  const q3 = d3.quantile(vals, 0.75);
+  const iqr = q3 - q1;
+  const whiskerLow = Math.max(d3.min(vals), q1 - 1.5 * iqr);
+  const whiskerHigh = Math.min(d3.max(vals), q3 + 1.5 * iqr);
+  const outliers = vals.filter(v => v < whiskerLow || v > whiskerHigh);
+  return { q1, median, q3, whiskerLow, whiskerHigh, outliers };
+}
+function medianOf(vals) { return d3.median(vals); }
+
+// ── TOOLTIP ──────────────────────────────────────────────────────────────────
+const tip = document.getElementById('tooltip');
+function showTip(html, x, y) {
+  tip.innerHTML = html;
+  tip.classList.add('show');
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let tx = x + 14, ty = y - 10;
+  if (tx + tw > window.innerWidth - 10) tx = x - tw - 14;
+  if (ty + th > window.innerHeight - 10) ty = window.innerHeight - th - 10;
+  tip.style.left = tx + 'px';
+  tip.style.top = ty + 'px';
+}
+function hideTip() { tip.classList.remove('show'); }
+
+// ── LEGEND ───────────────────────────────────────────────────────────────────
+function buildLegend(items) {
+  const leg = document.getElementById('legend');
+  leg.innerHTML = '';
+  items.forEach(({ label, color, key }) => {
+    const el = document.createElement('div');
+    el.className = 'legend-item' + (state.hiddenSeries.has(key) ? ' faded' : '');
+    el.innerHTML = `<div class="legend-dot" style="background:${color}"></div>${label}`;
+    el.addEventListener('click', () => {
+      if (state.hiddenSeries.has(key)) state.hiddenSeries.delete(key);
+      else state.hiddenSeries.add(key);
+      render();
+    });
+    leg.appendChild(el);
+  });
+}
+
+// ── INITIALIZE SVG ───────────────────────────────────────────────────────────
+const wrapper = document.querySelector('.chart-wrapper');
+const W = wrapper.clientWidth - 40;
+const H = 340;
+const margin = { top: 20, right: 30, bottom: 50, left: 62 };
+const iw = W - margin.left - margin.right;
+const ih = H - margin.top - margin.bottom;
+
+const svg = d3.select('#chart').attr('width', W).attr('height', H);
+const mainGroup = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+const xAxisG = mainGroup.append('g').attr('transform', `translate(0,${ih})`);
+const yAxisG = mainGroup.append('g');
+
+const boxPlotGroup = mainGroup.append('g').attr('class', 'boxplot-layer');
+const lineChartGroup = mainGroup.append('g').attr('class', 'linechart-layer');
+const hoverGroup = mainGroup.append('g').attr('class', 'hover-group').attr('opacity', 0);
+
+const hoverLine = hoverGroup.append('line')
+  .attr('stroke', '#ffffff').attr('stroke-width', 1).attr('stroke-dasharray', '4,3').attr('opacity', 0.3);
+
+// ── DRAW BOX PLOT (CLEANER SLIDE-IN VOM BODEN AUS) ───────────────────────────
+function drawBoxPlotAnimated(g, xScale, yScale, metrics, isCombo, showMedianLines) {
+  g.selectAll('*').remove();
+  
+  const bw = Math.max(18, Math.min(44, iw / (rawData.length * metrics.length) - 6));
+  const isWeightedCombo = state.metric === 'weighted_combo';
+
+  metrics.forEach((m, mi) => {
+    const dx = metrics.length > 1 ? (mi - (metrics.length - 1) / 2) * (bw + 8) : 0;
+    const mColor = (isCombo || isWeightedCombo) ? METRIC_COLORS[m] : COLORS[0];
+    const medianPoints = [];
+
+    rawData.forEach((week) => {
+      const vals = participants.map(p => getMetricValue(week.data, p, m, state.valueMode));
+      const s = computeBoxStats(vals);
+      const cx = xScale(week.label) + dx;
+      const bx = cx - bw / 2;
+
+      medianPoints.push({ x: cx, y: yScale(s.median) });
+
+      // Ganze Box startet am unteren Diagrammrand (ih) mit Opacity 0
+      const boxContainer = g.append('g')
+        .attr('class', 'box-container')
+        .attr('transform', `translate(0, ${ih - yScale(s.median)})`)
+        .attr('opacity', 0);
+
+      // Whiskers & Caps
+      boxContainer.append('line').attr('x1', cx).attr('x2', cx).attr('y1', yScale(s.whiskerHigh)).attr('y2', yScale(s.q3)).attr('stroke', mColor).attr('stroke-width', 1.5).attr('opacity', 0.6);
+      boxContainer.append('line').attr('x1', cx).attr('x2', cx).attr('y1', yScale(s.q1)).attr('y2', yScale(s.whiskerLow)).attr('stroke', mColor).attr('stroke-width', 1.5).attr('opacity', 0.6);
+      boxContainer.append('line').attr('x1', cx - bw/4).attr('x2', cx + bw/4).attr('y1', yScale(s.whiskerHigh)).attr('y2', yScale(s.whiskerHigh)).attr('stroke', mColor).attr('stroke-width', 1.5).attr('opacity', 0.6);
+      boxContainer.append('line').attr('x1', cx - bw/4).attr('x2', cx + bw/4).attr('y1', yScale(s.whiskerLow)).attr('y2', yScale(s.whiskerLow)).attr('stroke', mColor).attr('stroke-width', 1.5).attr('opacity', 0.6);
+
+      // Body Box
+      boxContainer.append('rect').attr('x', bx).attr('y', yScale(s.q3)).attr('width', bw).attr('height', Math.max(1, yScale(s.q1) - yScale(s.q3))).attr('fill', mColor).attr('fill-opacity', 0.18).attr('stroke', mColor).attr('stroke-width', 1.5).attr('rx', 3);
+      // Median Strich
+      boxContainer.append('line').attr('x1', bx).attr('x2', bx + bw).attr('y1', yScale(s.median)).attr('y2', yScale(s.median)).attr('stroke', mColor).attr('stroke-width', 2.5);
+
+      // Outliers
+      s.outliers.forEach(outVal => {
+        boxContainer.append('circle').attr('cx', cx).attr('cy', yScale(outVal)).attr('r', 3).attr('fill', mColor).attr('opacity', 0.8);
+      });
+
+      // Tooltip Trigger
+      const unit = state.valueMode === 'absolute' ? (m === 'weight' ? ' kg' : m === 'weighted_combo' ? '' : ' cm') : '%';
+      boxContainer.append('rect')
+        .attr('x', bx - 4).attr('y', yScale(s.whiskerHigh) - 4)
+        .attr('width', bw + 8).attr('height', Math.max(8, yScale(s.whiskerLow) - yScale(s.whiskerHigh) + 8))
+        .attr('fill', 'transparent')
+        .style('cursor', 'pointer')
+        .on('mousemove', (e) => {
+          showTip(`<div class="tooltip-title">${week.label} – ${METRIC_LABELS[m]}</div>
+            <div class="tooltip-row">Max: <span>${s.whiskerHigh.toFixed(2)}${unit}</span></div>
+            <div class="tooltip-row">Q3: <span>${s.q3.toFixed(2)}${unit}</span></div>
+            <div class="tooltip-row">Median: <span>${s.median.toFixed(2)}${unit}</span></div>
+            <div class="tooltip-row">Q1: <span>${s.q1.toFixed(2)}${unit}</span></div>
+            <div class="tooltip-row">Min: <span>${s.whiskerLow.toFixed(2)}${unit}</span></div>`, e.clientX, e.clientY);
+        })
+        .on('mouseleave', hideTip);
+
+      // Flüssiger linearer Fly-In auf die echte Position
+      boxContainer.transition()
+        .duration(BOX_ANIM_DURATION)
+        .ease(d3.easeCubicOut)
+        .attr('transform', 'translate(0,0)')
+        .attr('opacity', 1);
+    });
+
+    // Median-Trendlinien im Boxplot smooth einfaden
+    if (showMedianLines && medianPoints.length > 1) {
+      const lineGen = d3.line().x(d => d.x).y(d => d.y).curve(d3.curveCatmullRom.alpha(0.5));
+      
+      const path = g.append('path').datum(medianPoints).attr('fill', 'none').attr('stroke', mColor).attr('stroke-width', 2).attr('stroke-dasharray', '6,3').attr('opacity', 0).attr('d', lineGen);
+      path.transition().delay(BOX_ANIM_DURATION - 100).duration(200).attr('opacity', 0.85);
+
+      medianPoints.forEach(p => {
+        const dot = g.append('circle').attr('cx', p.x).attr('cy', p.y).attr('r', 3.5).attr('fill', mColor).attr('stroke', '#1a1d27').attr('stroke-width', 1.5).attr('opacity', 0);
+        dot.transition().delay(BOX_ANIM_DURATION - 100).duration(200).attr('opacity', 1);
+      });
+    }
+  });
+
+  if (isCombo) {
+    buildLegend(['weight','biceps_r','biceps_l'].map(m => ({ label: METRIC_LABELS[m], color: METRIC_COLORS[m], key: m })));
+  } else {
+    document.getElementById('legend').innerHTML = '';
+  }
+}
+
+// ── MAIN RENDER FUNCTION ─────────────────────────────────────────────────────
+function render() {
+  const xScale = d3.scalePoint().domain(rawData.map(d => d.label)).range([0, iw]).padding(0.2);
+  const isCombo = state.metric === 'combo';
+  const metrics = isCombo ? ['weight', 'biceps_r', 'biceps_l'] : [state.metric];
+  const isLineMode = state.chartType === 'line';
+
+  // Datenbasis extrahieren, um Y-Achsenskalierung zu bestimmen
+  const allVals = [];
+  metrics.forEach(m => {
+    participants.forEach(p => {
+      if (isLineMode && state.hiddenSeries.has(isCombo ? p + '_' + m : p)) return;
+      rawData.forEach(week => allVals.push(getMetricValue(week.data, p, m, state.valueMode)));
+    });
+  });
+  
+  const yExtent = d3.extent(allVals.length ? allVals : [0, 10]);
+  const pad = Math.max((yExtent[1] - yExtent[0]) * 0.12, 0.5);
+  const yScale = d3.scaleLinear().domain([yExtent[0] - pad, yExtent[1] + pad]).range([ih, 0]);
+
+  // Statische X-Achse
+  xAxisG.call(d3.axisBottom(xScale).tickSize(0)).call(ax => {
+    ax.select('.domain').attr('stroke', '#2e3348');
+    ax.selectAll('text').attr('fill', '#7b82a0').attr('font-size', '11px').attr('dy', '1.5em');
+  });
+
+  // Y-Achsen Transition
+  yAxisG.transition().duration(isLineMode ? LINE_ANIM_DURATION : BOX_ANIM_DURATION).call(d3.axisLeft(yScale).ticks(6).tickSize(-iw));
+  yAxisG.call(ax => {
+    ax.select('.domain').remove();
+    ax.selectAll('.tick line').attr('stroke', '#2e3348').attr('stroke-dasharray', '3,3');
+    ax.selectAll('text').attr('fill', '#7b82a0').attr('font-size', '11px');
+  });
+
+  // ── BRANCH: BOXPLOT MODUS (DEZENTER UP-SLIDE IN) ───────────────────────────
+  if (!isLineMode) {
+    lineChartGroup.style('display', 'none').selectAll('.data-line, .median-line-overlay, .median-dot-overlay').remove();
+    hoverGroup.attr('opacity', 0);
+    boxPlotGroup.style('display', 'block');
+    
+    drawBoxPlotAnimated(boxPlotGroup, xScale, yScale, metrics, isCombo, state.chartType === 'boxmedian');
+    return;
+  }
+
+  // ── BRANCH: LINIENDIAGRAMM MODUS (SMOOTH PATH MORPHING) ────────────────────
+  boxPlotGroup.style('display', 'none').selectAll('*').remove();
+  lineChartGroup.style('display', 'block');
+
+  const series = [];
+  if (isCombo) {
+    metrics.forEach(m => {
+      participants.forEach((p, pi) => {
+        if (state.hiddenSeries.has(p + '_' + m)) return;
+        series.push({
+          id: p + '_' + m,
+          label: `${p} – ${METRIC_LABELS[m]}`,
+          color: state.showMedian ? COLORS[pi] + '25' : COLORS[pi],
+          colorFull: COLORS[pi],
+          metric: m,
+          dashed: m === 'biceps_r' ? false : m === 'biceps_l' ? '4,3' : false,
+          values: rawData.map(w => ({ label: w.label, value: getMetricValue(w.data, p, m, state.valueMode) }))
+        });
+      });
+    });
+  } else {
+    participants.forEach((p, pi) => {
+      if (state.hiddenSeries.has(p)) return;
+      series.push({
+        id: p,
+        label: p,
+        color: state.showMedian ? '#ffffff15' : COLORS[pi],
+        colorFull: COLORS[pi],
+        metric: state.metric,
+        values: rawData.map(w => ({ label: w.label, value: getMetricValue(w.data, p, state.metric, state.valueMode) }))
+      });
+    });
+  }
+
+  const curveType = state.lineStyle === 'smooth' ? d3.curveCatmullRom.alpha(0.5) : d3.curveLinear;
+  const lineGen = d3.line().x(d => xScale(d.label)).y(d => yScale(d.value)).curve(curveType);
+
+  // Linien-Binding & Morph-Animation
+  const paths = lineChartGroup.selectAll('.data-line').data(series, d => d.id);
+
+  paths.enter()
+    .append('path')
+    .attr('class', 'data-line')
+    .attr('fill', 'none')
+    .attr('stroke', d => d.color)
+    .attr('stroke-width', state.showMedian ? 1 : 2)
+    .attr('stroke-dasharray', d => d.dashed || 'none')
+    .attr('opacity', 0)
+    .merge(paths)
+    .transition().duration(LINE_ANIM_DURATION)
+    .attr('stroke', d => d.color)
+    .attr('stroke-width', state.showMedian ? 1 : 2)
+    .attr('stroke-dasharray', d => d.dashed || 'none')
+    .attr('opacity', state.showMedian ? 0.25 : 0.85)
+    .attr('d', d => lineGen(d.values));
+
+  paths.exit().transition().duration(LINE_ANIM_DURATION).attr('opacity', 0).remove();
+
+  // Median-Linienüberlagerung im Linien-Modus
+  const medianLinesData = [];
+  if (state.showMedian) {
+    metrics.forEach(m => {
+      medianLinesData.push({
+        metric: m,
+        color: isCombo ? METRIC_COLORS[m] : '#ffffff',
+        values: rawData.map(week => ({
+          label: week.label,
+          value: medianOf(participants.map(p => getMetricValue(week.data, p, m, state.valueMode)))
+        }))
+      });
+    });
+  }
+
+  const medLines = lineChartGroup.selectAll('.median-line-overlay').data(medianLinesData, d => d.metric);
+  medLines.enter()
+    .append('path')
+    .attr('class', 'median-line-overlay')
+    .attr('fill', 'none')
+    .attr('stroke', d => d.color)
+    .attr('stroke-width', 3)
+    .attr('opacity', 0)
+    .merge(medLines)
+    .transition().duration(LINE_ANIM_DURATION)
+    .attr('stroke', d => d.color)
+    .attr('opacity', 1)
+    .attr('d', d => lineGen(d.values));
+  medLines.exit().transition().duration(LINE_ANIM_DURATION).attr('opacity', 0).remove();
+
+  const medDotsData = medianLinesData.flatMap(m => m.values.map(v => ({ ...v, color: m.color, metric: m.metric })));
+  const medDots = lineChartGroup.selectAll('.median-dot-overlay').data(medDotsData, d => d.metric + '_' + d.label);
+  medDots.enter()
+    .append('circle')
+    .attr('class', 'median-dot-overlay').attr('r', 4).attr('stroke', '#1a1d27').attr('stroke-width', 1.5).attr('fill', d => d.color).attr('opacity', 0)
+    .merge(medDots)
+    .transition().duration(LINE_ANIM_DURATION)
+    .attr('opacity', 1).attr('cx', d => xScale(d.label)).attr('cy', d => yScale(d.value));
+  medDots.exit().remove();
+
+  // Hover Interaktions-Fläche neu aufbauen
+  hoverGroup.selectAll('circle').remove();
+  const dotsMap = {};
+  series.forEach(s => {
+    dotsMap[s.id] = hoverGroup.append('circle').attr('r', 4).attr('fill', s.colorFull).attr('stroke', '#fff').attr('stroke-width', 1.5).attr('opacity', 0);
+  });
+
+  const trigger = lineChartGroup.selectAll('.interaction-trigger').data([null]);
+  trigger.enter()
+    .append('rect')
+    .attr('class', 'interaction-trigger')
+    .attr('width', iw).attr('height', ih)
+    .attr('fill', 'transparent')
+    .merge(trigger)
+    .on('mousemove', function(e) {
+      const [mx] = d3.pointer(e, this);
+      const labels = rawData.map(d => d.label);
+      const idx = d3.bisectCenter(labels.map(l => xScale(l)), mx);
+      const label = labels[idx];
+      const cx = xScale(label);
+
+      hoverGroup.attr('opacity', 1);
+      hoverLine.attr('x1', cx).attr('x2', cx).attr('y1', 0).attr('y2', ih);
+
+      series.forEach(s => {
+        const pt = s.values[idx];
+        if (pt && dotsMap[s.id]) dotsMap[s.id].attr('cx', cx).attr('cy', yScale(pt.value)).attr('opacity', 1);
+      });
+
+      const week = rawData[idx];
+      const rows = series.map(s => {
+        const v = s.values[idx]?.value;
+        const u = state.valueMode === 'absolute' ? (s.metric === 'weight' ? ' kg' : s.metric === 'weighted_combo' ? '' : ' cm') : '%';
+        return `<div class="tooltip-row" style="color:${s.colorFull}">${s.label}: <span>${v?.toFixed(1)}${u}</span></div>`;
+      }).join('');
+
+      let medRow = '';
+      if (state.showMedian) {
+        metrics.forEach(m => {
+          const mColor = isCombo ? METRIC_COLORS[m] : '#ffffff';
+          const mVal = medianOf(participants.map(p => getMetricValue(week.data, p, m, state.valueMode)));
+          const u = state.valueMode === 'absolute' ? (m === 'weight' ? ' kg' : m === 'weighted_combo' ? '' : ' cm') : '%';
+          medRow += `<div class="tooltip-row" style="color:${mColor};font-weight:700">Median: <span>${mVal.toFixed(1)}${u}</span></div>`;
+        });
+      }
+      showTip(`<div class="tooltip-title">${label} (${week.date})</div>${medRow}${rows}`, e.clientX, e.clientY);
+    })
+    .on('mouseleave', () => { hoverGroup.attr('opacity', 0); hideTip(); });
+
+  // Legendenaufbau
+  if (isCombo) {
+    buildLegend(participants.map((p, i) => ({ label: p, color: COLORS[i], key: p })));
+  } else {
+    buildLegend(participants.map((p, i) => ({ label: p, color: COLORS[i], key: p })));
+  }
+}
+
+// Initialer Render
+render();
+window.addEventListener('resize', () => render());
+</script>
+</body>
+</html>
